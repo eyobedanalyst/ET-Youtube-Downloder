@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 import shutil
 
-st.set_page_config(page_title="YouTube Downloader", page_icon="📹", layout="centered")
+st.set_page_config(page_title="Mr Eyobed Sebrala YouTube Downloader", page_icon="📹", layout="centered")
 
-st.title("📹 YouTube Downloader")
+st.title("📹Mr Eyobed Sebrala YouTube Downloader")
 st.markdown("Download YouTube videos for personal and educational use")
 
 # Create downloads directory if it doesn't exist
