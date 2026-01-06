@@ -21,8 +21,8 @@ has_ffmpeg = check_ffmpeg()
 
 # Display FFmpeg status
 if not has_ffmpeg:
-    st.warning("⚠️ FFmpeg not detected. Some quality options are limited. Install FFmpeg for best results.")
-    with st.expander("How to install FFmpeg"):
+    st.info("ℹ️ FFmpeg not detected. Using compatibility mode (works without FFmpeg).")
+    with st.expander("Want better quality? Install FFmpeg"):
         st.markdown("""
         **Windows:** Download from https://ffmpeg.org/download.html
         
@@ -39,19 +39,18 @@ url = st.text_input("Enter YouTube URL:", placeholder="https://www.youtube.com/w
 # Quality selection based on FFmpeg availability
 if has_ffmpeg:
     quality_options = [
-        "Best Quality (Video + Audio)", 
-        "Audio Only (MP3)", 
+        "Best Quality", 
         "1080p", 
         "720p", 
         "480p", 
-        "360p"
+        "Audio Only (MP3)"
     ]
 else:
     quality_options = [
-        "Best Available (single file)",
-        "720p or lower (single file)",
-        "480p or lower (single file)",
-        "360p or lower (single file)"
+        "Best Available",
+        "High Quality (720p)",
+        "Medium Quality (480p)",
+        "Low Quality (360p)"
     ]
 
 quality = st.selectbox("Select quality:", quality_options)
@@ -61,11 +60,12 @@ if st.button("Download", type="primary"):
         st.error("Please enter a YouTube URL")
     else:
         try:
-            with st.spinner("Downloading..."):
+            with st.spinner("Fetching video information..."):
                 # Configure download options based on selection
                 ydl_opts = {
                     'outtmpl': str(downloads_dir / '%(title)s.%(ext)s'),
-                    'progress_hooks': [],
+                    'quiet': False,
+                    'no_warnings': False,
                 }
                 
                 if has_ffmpeg:
@@ -79,29 +79,29 @@ if st.button("Download", type="primary"):
                                 'preferredquality': '192',
                             }],
                         })
-                    elif quality == "Best Quality (Video + Audio)":
-                        ydl_opts['format'] = 'bestvideo+bestaudio/best'
+                    elif quality == "Best Quality":
+                        ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
                     elif quality == "1080p":
-                        ydl_opts['format'] = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+                        ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]'
                     elif quality == "720p":
-                        ydl_opts['format'] = 'bestvideo[height<=720]+bestaudio/best[height<=720]'
+                        ydl_opts['format'] = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]'
                     elif quality == "480p":
-                        ydl_opts['format'] = 'bestvideo[height<=480]+bestaudio/best[height<=480]'
-                    elif quality == "360p":
-                        ydl_opts['format'] = 'bestvideo[height<=360]+bestaudio/best[height<=360]'
+                        ydl_opts['format'] = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]'
                 else:
-                    # Limited options without FFmpeg (single file formats only)
-                    if quality == "Best Available (single file)":
-                        ydl_opts['format'] = 'best'
-                    elif quality == "720p or lower (single file)":
-                        ydl_opts['format'] = 'best[height<=720]'
-                    elif quality == "480p or lower (single file)":
-                        ydl_opts['format'] = 'best[height<=480]'
-                    elif quality == "360p or lower (single file)":
-                        ydl_opts['format'] = 'best[height<=360]'
+                    # Without FFmpeg - use pre-merged formats only
+                    if quality == "Best Available":
+                        # Try best mp4, fallback to any best format
+                        ydl_opts['format'] = 'best[ext=mp4]/best'
+                    elif quality == "High Quality (720p)":
+                        ydl_opts['format'] = 'best[height<=720][ext=mp4]/best[height<=720]/best'
+                    elif quality == "Medium Quality (480p)":
+                        ydl_opts['format'] = 'best[height<=480][ext=mp4]/best[height<=480]/best'
+                    elif quality == "Low Quality (360p)":
+                        ydl_opts['format'] = 'best[height<=360][ext=mp4]/best[height<=360]/best'
                 
                 # Download the video
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    st.info("⏳ Downloading... This may take a few moments depending on file size.")
                     info = ydl.extract_info(url, download=True)
                     filename = ydl.prepare_filename(info)
                     
@@ -110,28 +110,55 @@ if st.button("Download", type="primary"):
                         filename = filename.rsplit('.', 1)[0] + '.mp3'
                     
                     title = info.get('title', 'Unknown')
+                    duration = info.get('duration', 0)
+                    filesize = info.get('filesize') or info.get('filesize_approx', 0)
                 
-                st.success(f"✅ Downloaded: {title}")
-                st.info(f"📁 Saved to: {filename}")
-                
-                # Offer download button
-                if os.path.exists(filename):
+                # Verify file exists and is not empty
+                if not os.path.exists(filename):
+                    st.error("❌ Download failed: File was not created")
+                elif os.path.getsize(filename) == 0:
+                    st.error("❌ Download failed: File is empty")
+                    os.remove(filename)  # Clean up empty file
+                else:
+                    st.success(f"✅ Successfully downloaded: {title}")
+                    
+                    # Show file info
+                    file_size_mb = os.path.getsize(filename) / (1024 * 1024)
+                    st.info(f"📁 File size: {file_size_mb:.2f} MB | Duration: {duration//60}:{duration%60:02d}")
+                    
+                    # Offer download button
                     with open(filename, 'rb') as f:
                         file_ext = filename.rsplit('.', 1)[-1].lower()
-                        mime_type = "video/mp4" if file_ext in ['mp4', 'webm', 'mkv'] else "audio/mpeg"
+                        
+                        if file_ext == 'mp3':
+                            mime_type = "audio/mpeg"
+                        elif file_ext in ['mp4', 'webm', 'mkv']:
+                            mime_type = "video/mp4"
+                        else:
+                            mime_type = "application/octet-stream"
                         
                         st.download_button(
-                            label="⬇️ Download File",
+                            label="⬇️ Download to Computer",
                             data=f,
                             file_name=os.path.basename(filename),
-                            mime=mime_type
+                            mime=mime_type,
+                            use_container_width=True
                         )
                 
+        except yt_dlp.utils.DownloadError as e:
+            st.error(f"❌ Download Error: {str(e)}")
+            st.info("💡 Try selecting a different quality option or check if the video is available in your region")
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
-            st.info("Make sure the URL is valid and the video is accessible")
+            st.info("💡 Troubleshooting tips:")
+            st.markdown("""
+            - Make sure the URL is complete and valid
+            - Check if the video is publicly accessible (not private/deleted)
+            - Try a different quality setting
+            - Some age-restricted videos may not work
+            """)
 
 # Footer
 st.markdown("---")
 st.markdown("⚠️ **Note:** Only download videos you have permission to download. Respect copyright laws.")
-st.markdown("This tool is for personal and educational use only.")
+st.markdown("This tool is for personal and educational use only. and Thank Eyobed to ")
